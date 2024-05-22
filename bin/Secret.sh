@@ -15,19 +15,31 @@ show_help() {
 default_encode() {
     local input="$1"
     local password="$2"
-    echo -n "$input" | openssl aes-256-cbc -a -salt -pass pass:"$password"
+    local type="$3"
+    if [[ "$input_type" == "file" ]]; then
+        echo  $(<"$input") | openssl aes-256-cbc -a -salt -pass pass:"$password"
+    else
+        echo "$input" | openssl aes-256-cbc -a -salt -pass pass:"$password"
+    fi
+    
 }
 
 default_decode() {
     local input="$1"
     local password="$2"
-    echo -n "$input" | openssl aes-256-cbc -d -a -pass pass:"$password"
+    local type="$3"
+
+    if [[ "$input_type" == "file" ]]; then
+        openssl aes-256-cbc -d -a -pass pass:"$password" < "$input"
+    else
+        openssl aes-256-cbc -d -a -pass pass:"$password" <<< "$input"
+    fi
 }
 
 overwrite_input_file() {
     local input="$1"
     local output="$2"
-    read -p "Are you sure you want to overwrite the content of '$input' with the decoded data? (y/n): " answer
+    read -rp "Are you sure you want to overwrite the content of '$input' with the decoded data? (y/n): " answer
     case ${answer:0:1} in
         y|Y )
             echo "Overwriting '$input' with decoded data..."
@@ -68,10 +80,16 @@ fi
 input="$1"
 output="$2"
 
-if [[ -f "$input" ]]; then
-    input_data=$(cat "$input")
+if [[ ! -f "$input" ]]; then
+    input_type="string"
 else
-    input_data="$input"
+    input_type="file"
+fi
+
+if [[ -z "$output" ]]; then
+    output_type="stdout"
+else
+    output_type="file"
 fi
 
 if [[ -n "$script" ]]; then
@@ -81,9 +99,9 @@ if [[ -n "$script" ]]; then
     fi
 
     if [[ -n "$encode" ]]; then
-        result=$("$script" "$input_data")
+        result=$(default_encode "$input" "$password" "$input_type")
     else
-        result=$("$script" "$input_data")
+        result=$(default_decode "$input" "$password" "$input_type")
     fi
 else
     if [[ -z "$password" ]]; then
@@ -93,19 +111,18 @@ else
     fi
 
     if [[ -n "$encode" ]]; then
-        result=$(default_encode "$input_data" "$password")
+        result=$(default_encode "$input" "$password")
     else
-        result=$(default_decode "$input_data" "$password")
+        result=$(default_decode "$input" "$password")
     fi
 fi
 
-if [[ -n "$output" ]]; then
+if [[ "$output_type" == "file" ]]; then
     echo "$result" > "$output"
 else
     echo "$result"
 fi
 
-if [[ -n "$overwrite" ]]; then
+if [[ -n "$overwrite" && "$input_type" == "file" ]]; then
     overwrite_input_file "$input" "$result"
 fi
-
